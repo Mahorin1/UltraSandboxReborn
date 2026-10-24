@@ -1,0 +1,6 @@
+build/
+ultrasandbox
+*.o
+*.d
+compile_commands.json
+.cache/
