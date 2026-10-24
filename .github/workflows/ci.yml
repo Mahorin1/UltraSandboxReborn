@@ -1,0 +1,16 @@
+name: ci
+on: [push, pull_request]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build Box2D (v3.2)
+        run: |
+          sudo apt-get update && sudo apt-get install -y cmake
+          git clone --depth 1 --branch v3.2.0 https://github.com/erincatto/box2d /tmp/box2d
+          cmake -S /tmp/box2d -B /tmp/box2d/build -DCMAKE_BUILD_TYPE=Release -DBOX2D_SAMPLES=OFF -DBOX2D_UNIT_TESTS=OFF -DBOX2D_BENCHMARKS=OFF
+          sudo cmake --build /tmp/box2d/build --target install -j
+          sudo ldconfig
+      - name: Headless test
+        run: make test

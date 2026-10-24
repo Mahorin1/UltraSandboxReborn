@@ -1,0 +1,6 @@
+CompileFlags:
+  Add: [-std=c17, -Isrc]
+Diagnostics:
+  ClangTidy:
+    Add: [bugprone-*, performance-*, clang-analyzer-*]
+    Remove: [bugprone-easily-swappable-parameters]

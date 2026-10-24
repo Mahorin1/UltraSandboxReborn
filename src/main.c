@@ -17,11 +17,13 @@ int main(void) {
     int n = 0;
     dolls[n++] = ragdoll_create(ph.world, (b2Vec2){ 600.0f, 300.0f }, 1.0f);
 
+    bool debug = false;
     Camera2D cam = { .offset = { 850, 475 }, .target = { 850, 475 }, .zoom = 1.0f };
 
     while (!WindowShouldClose()) {
         float dt = GetFrameTime();
         if (dt > 0.1f) dt = 0.1f;
+        if (IsKeyPressed(KEY_F1)) debug = !debug;
         float speed = IsKeyDown(KEY_S) ? 0.15f : 1.0f;
 
         /* caméra : clic droit = pan, molette = zoom */
@@ -50,10 +52,10 @@ int main(void) {
         ClearBackground((Color){ 31, 68, 112, 255 });
         BeginMode2D(cam);
             render_ground();
-            for (int i = 0; i < n; i++) render_ragdoll(dolls[i]);
+            for (int i = 0; i < n; i++) { render_ragdoll(dolls[i]); if (debug) render_ragdoll_debug(dolls[i]); }
         EndMode2D();
         DrawText(TextFormat("%d fps | workers %d | bodies %d", GetFPS(), physics_default_workers(), n * RD_PARTS), 19, 910, 20, WHITE);
-        DrawText("A/D marcher | Haut/Bas actif/inactif | H spawn | S slow-mo | clic droit pan | molette zoom", 19, 18, 18, WHITE);
+        DrawText("A/D marcher | Haut/Bas actif/inactif | H spawn | S slow-mo | F1 debug | clic droit pan | molette zoom", 19, 18, 18, WHITE);
         EndDrawing();
     }
 

@@ -27,3 +27,20 @@ void render_ground(void) {
     DrawRectangle(-8150, 950, 18000, 100, (Color){ 127, 127, 76, 255 });
     DrawRectangleLinesEx((Rectangle){ -8150, 950, 18000, 100 }, 4, BLACK);
 }
+
+void render_ragdoll_debug(const Ragdoll* r) {
+    for (int i = 0; i < RD_JOINTS; i++) {
+        b2JointId j = r->art[i].id;
+        b2Vec2 a = m2px(b2Body_GetWorldPoint(b2Joint_GetBodyA(j), b2Joint_GetLocalFrameA(j).p));
+        DrawCircleV((Vector2){ a.x, a.y }, 3.0f, RED);
+    }
+    for (int i = RD_FOOT1; i <= RD_FOOT2; i++) {
+        b2Vec2 p = m2px(b2Body_GetPosition(r->body[i]));
+        DrawCircleLines((int)p.x, (int)p.y, 30.0f, r->on_ground ? GREEN : YELLOW);
+    }
+    DrawCircleV((Vector2){ r->leg1.point.x, r->leg1.point.y }, 5.0f, SKYBLUE);
+    DrawCircleV((Vector2){ r->leg2.point.x, r->leg2.point.y }, 5.0f, ORANGE);
+    b2Vec2 c = m2px(b2Body_GetPosition(r->body[RD_CHEST]));
+    DrawText(TextFormat("active=%d ground=%d wake=%d dir=%d", r->active, r->on_ground, r->wake_up, r->dir),
+             (int)c.x - 80, (int)c.y - 110, 14, WHITE);
+}
