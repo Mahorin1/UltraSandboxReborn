@@ -33,8 +33,11 @@ build:
 run: debug
 	./$(NAME)
 
-test: $(CORE) tests/headless.c
-	$(CC) $(CFLAGS) $^ -o build/headless $(LIB_B) -lm -lpthread
+test:
+	mkdir -p build
+	$(CC) -std=c17 $(WARN) -Isrc $(PKG_B) -O1 -g -fsanitize=address,undefined \
+	$(filter-out src/main.c src/render.c,$(SRC)) tests/headless.c \
+	-o build/headless $(LIB_B) -lm -lpthread
 	./build/headless
 
 clean:
