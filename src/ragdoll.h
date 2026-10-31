@@ -37,10 +37,6 @@ typedef struct Ragdoll {
     float swing_x0, swing_x1;
     float com_x, com_y, com_vx, com_vy, chest_angle, lean;
     float fall_timer, getup_timer, ground_y, mass;
-    b2WorldId world;
-    b2BodyId getup_anchor;
-    b2JointId getup_joint;
-    float getup_x0, getup_y0;
     int   foot_contact[2];
     bool  foot_ground[2], stepping, lying;
 } Ragdoll;

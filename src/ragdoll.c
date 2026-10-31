@@ -49,6 +49,21 @@ static void lim(Ragdoll* r, int j, float lo_deg, float hi_deg) {
     b2RevoluteJoint_SetLimits(r->art[j].id, clampf(deg2rad(lo_deg), -PI_F, PI_F), clampf(deg2rad(hi_deg), -PI_F, PI_F));
 }
 
+/* limites normales du sens de marche (utilisées aussi pour restaurer après le relevé) */
+static void set_dir_limits(Ragdoll* r, int dir) {
+    if (dir == 1) {
+        lim(r, 1, -215, 65);  lim(r, 2, -215, 65);
+        lim(r, 3, -150, 0);   lim(r, 4, -150, 0);
+        lim(r, 5, -140, 60);  lim(r, 6, -140, 60);
+        lim(r, 7, 0, 140);    lim(r, 8, 0, 140);
+    } else {
+        lim(r, 1, -65, 215);  lim(r, 2, -65, 215);
+        lim(r, 3, 0, 150);    lim(r, 4, 0, 150);
+        lim(r, 5, -60, 140);  lim(r, 6, -60, 140);
+        lim(r, 7, -140, 0);   lim(r, 8, -140, 0);
+    }
+}
+
 Ragdoll* ragdoll_create(b2WorldId w, b2Vec2 pos, float s) {
     Ragdoll* r = calloc(1, sizeof *r);
     r->group = next_group++;
@@ -121,12 +136,6 @@ Ragdoll* ragdoll_create(b2WorldId w, b2Vec2 pos, float s) {
     lim(r, 10, -175, 175);
     r->mass = 0.0f;
     for (int i = 0; i < RD_PARTS; i++) r->mass += b2Body_GetMass(r->body[i]);
-    r->world = w;
-    r->getup_joint = (b2JointId){ 0 };
-    b2BodyDef gd = b2DefaultBodyDef();
-    gd.type = b2_kinematicBody;
-    gd.position = px2m(pos);
-    r->getup_anchor = b2CreateBody(w, &gd);
     r->ground_y = 947.5f;
     r->dir = -1;
     r->gait = RD_GAIT_STAND;
@@ -147,21 +156,14 @@ Ragdoll* ragdoll_create(b2WorldId w, b2Vec2 pos, float s) {
 }
 
 void ragdoll_destroy(Ragdoll* r) {
-    if (b2Joint_IsValid(r->getup_joint)) b2DestroyJoint(r->getup_joint);
     for (int i = 0; i < RD_PARTS; i++) b2DestroyBody(r->body[i]); /* détruit aussi joints/shapes */
-    if (b2Body_IsValid(r->getup_anchor)) b2DestroyBody(r->getup_anchor);
     free(r);
-}
-
-static void getup_detach(Ragdoll* r) {
-    if (b2Joint_IsValid(r->getup_joint)) b2DestroyJoint(r->getup_joint);
-    r->getup_joint = (b2JointId){ 0 };
 }
 
 /* ---------- états ---------- */
 
 void ragdoll_set_active(Ragdoll* r, bool on) {
-    if (!on) getup_detach(r);
+    if (!on) set_dir_limits(r, r->dir);
     for (int i = 0; i < RD_JOINTS; i++) {
         r->art[i].active = on;
         b2RevoluteJoint_EnableMotor(r->art[i].id, on);
@@ -192,17 +194,7 @@ void ragdoll_set_active(Ragdoll* r, bool on) {
 
 void ragdoll_set_dir(Ragdoll* r, int dir) {
     if (dir == r->dir) return;
-    if (dir == 1) {
-        lim(r, 1, -215, 65);  lim(r, 2, -215, 65);
-        lim(r, 3, -150, 0);   lim(r, 4, -150, 0);
-        lim(r, 5, -140, 60);  lim(r, 6, -140, 60);
-        lim(r, 7, 0, 140);    lim(r, 8, 0, 140);
-    } else {
-        lim(r, 1, -65, 215);  lim(r, 2, -65, 215);
-        lim(r, 3, 0, 150);    lim(r, 4, 0, 150);
-        lim(r, 5, -60, 140);  lim(r, 6, -60, 140);
-        lim(r, 7, -140, 0);   lim(r, 8, -140, 0);
-    }
+    set_dir_limits(r, dir);
     /* les pieds restent à rotation 0 : le contrôleur d'ankle les remet à plat */
     r->dir = dir;
     r->stepping = false;
@@ -211,35 +203,18 @@ void ragdoll_set_dir(Ragdoll* r, int dir) {
 
 void ragdoll_get_up(Ragdoll* r) {
     if (!r->active) ragdoll_set_active(r, true);
-    getup_detach(r);
+    /* le kip-up utilise toute l'amplitude des articulations, puis les limites
+       normales sont restaurées à la réception */
+    for (int i = 0; i < RD_JOINTS; i++) {
+        b2RevoluteJoint_EnableLimit(r->art[i].id, true);
+        b2RevoluteJoint_SetLimits(r->art[i].id, -PI_F, PI_F);
+    }
     r->gait = RD_GAIT_GETUP;
     r->getup_timer = 0.0f;
     r->getup_phase = 0;
     r->stepping = false;
     r->fall_timer = 0.0f;
     r->lying = true;
-
-    b2Vec2 c = m2px(b2Body_GetPosition(r->body[RD_CHEST]));
-    r->getup_x0 = c.x; r->getup_y0 = c.y;
-    b2Body_SetTransform(r->getup_anchor, px2m(c), b2Rot_identity);
-
-    b2MotorJointDef jd = b2DefaultMotorJointDef();
-    jd.base.bodyIdA = r->getup_anchor;
-    jd.base.bodyIdB = r->body[RD_CHEST];
-    jd.base.localFrameA.p = b2Vec2_zero;
-    jd.base.localFrameA.q = b2Rot_identity;
-    jd.base.localFrameB.p = b2Vec2_zero;
-    jd.base.localFrameB.q = b2Rot_identity;
-    jd.base.collideConnected = false;
-    jd.linearHertz = 5.0f;
-    jd.linearDampingRatio = 1.0f;
-    jd.maxSpringForce = 400.0f * r->mass;
-    jd.maxVelocityForce = 0.0f;
-    jd.angularHertz = 3.0f;
-    jd.angularDampingRatio = 1.0f;
-    jd.maxSpringTorque = 12.0f * r->mass;
-    jd.maxVelocityTorque = 0.0f;
-    r->getup_joint = b2CreateMotorJoint(r->world, &jd);
 }
 
 static void set_j(Ragdoll* r, int i, float deg, float speed, float force) {
@@ -394,47 +369,62 @@ static void torso_control(Ragdoll* r, float v_cmd, float pos_err, float kp, floa
         b2Body_ApplyForceToCenter(r->body[RD_CHEST], (b2Vec2){ f, 0.0f }, true);
 }
 
-/* relevé assisté : appui des coudes + guidage borné du torse vers la station debout */
+/* relevé musculaire : kip-up court, puis extension des jambes.
+   Aucun couple ni force extérieure : seuls les moteurs des articulations agissent. */
+static void set_foot_flat(Ragdoll* r, int leg, float speed, float force) {
+    int jf = 9 + leg;
+    float cur = b2RevoluteJoint_GetCurrentAngle(r->art[jf].id);
+    float frot = b2Rot_GetAngle(b2Body_GetRotation(r->body[RD_FOOT1 + leg]));
+    float corr = shortest_angle_dif(0.0f, frot);
+    set_j_rad(r, jf, cap_rad2(cur + corr), speed, force);
+}
+
 static void update_getup(Ragdoll* r, float dt) {
     r->getup_timer += dt;
     float t = r->getup_timer;
+    float d = (float)r->dir;
     float upright = fabsf(cap_rad2(r->chest_angle));
     float chest_y_px = m2px(b2Body_GetPosition(r->body[RD_CHEST])).y;
-    float d = (float)r->dir;
 
-    set_j(r, 1, 55.0f * d, 10.0f, 3.0f);
-    set_j(r, 2, 55.0f * d, 10.0f, 3.0f);
-    set_j(r, 3, -100.0f * d, 10.0f, 2.5f);
-    set_j(r, 4, -100.0f * d, 10.0f, 2.5f);
-    set_j(r, 0, 0.0f, 6.0f, 1.0f);
-
-    /* trajectoire du guidage : remonte le torse et le redresse */
-    float u = clampf(t / 0.85f, 0.0f, 1.0f);
-    u = u * u * (3.0f - 2.0f * u);
-    float target_y = r->ground_y - 96.0f; /* torse debout */
-    b2Vec2 target = { r->getup_x0, r->getup_y0 + (target_y - r->getup_y0) * u };
-    if (b2Body_IsValid(r->getup_anchor)) {
-        b2Body_SetTransform(r->getup_anchor, px2m(target), b2Rot_identity);
-        b2Body_SetAwake(r->body[RD_CHEST], true);
+    if (t < 0.25f) {
+        /* impulsion : les bras poussent, les jambes se replient sous le corps */
+        set_j(r, 1, -45.0f * d, 9.0f, 16.0f);
+        set_j(r, 2, -45.0f * d, 9.0f, 16.0f);
+        set_j(r, 3, 2.0f * d, 9.0f, 16.0f);
+        set_j(r, 4, 2.0f * d, 9.0f, 16.0f);
+        set_j(r, 5, 40.0f * d, 9.0f, 18.0f);
+        set_j(r, 6, 40.0f * d, 9.0f, 18.0f);
+        set_j(r, 7, 117.0f * d, 9.0f, 18.0f);
+        set_j(r, 8, 117.0f * d, 9.0f, 18.0f);
+        set_j(r, 0, 0.0f, 6.0f, 3.0f);
+        set_foot_flat(r, 0, 8.0f, 3.0f);
+        set_foot_flat(r, 1, 8.0f, 3.0f);
+        r->getup_phase = 0;
+        return;
     }
 
-    /* pieds sous le bassin, prêts à recevoir le poids */
-    b2Vec2 hip0 = hip_px(r, 0), hip1 = hip_px(r, 1);
-    float k = 1.0f - expf(-12.0f * dt);
-    r->leg1.point.x += (hip0.x + d * 12.0f - 6.0f - r->leg1.point.x) * k;
-    r->leg2.point.x += (hip1.x + d * 12.0f + 6.0f - r->leg2.point.x) * k;
-    r->leg1.point.y += (r->ground_y - r->leg1.point.y) * k;
-    r->leg2.point.y += (r->ground_y - r->leg2.point.y) * k;
-    drive_leg(r, 0, r->leg1.point, 3.5f);
-    drive_leg(r, 1, r->leg2.point, 3.5f);
+    /* réception : jambes tendues, bras le long du corps */
+    set_j(r, 1, 8.0f * d, 7.0f, 14.0f);
+    set_j(r, 2, 8.0f * d, 7.0f, 14.0f);
+    set_j(r, 3, -32.0f * d, 7.0f, 14.0f);
+    set_j(r, 4, -32.0f * d, 7.0f, 14.0f);
+    set_j(r, 5, 0.0f, 7.0f, 14.0f);
+    set_j(r, 6, 0.0f, 7.0f, 14.0f);
+    set_j(r, 7, 0.0f, 7.0f, 14.0f);
+    set_j(r, 8, 0.0f, 7.0f, 14.0f);
+    set_j(r, 0, 0.0f, 6.0f, 3.0f);
+    set_foot_flat(r, 0, 10.0f, 3.0f);
+    set_foot_flat(r, 1, 10.0f, 3.0f);
+    r->getup_phase = 1;
 
-    if (t > 1.0f && upright < deg2rad(30.0f) && chest_y_px < (r->ground_y - 78.0f) &&
+    if (t > 2.50f && upright < deg2rad(30.0f) && chest_y_px < (r->ground_y - 70.0f) &&
         (r->foot_ground[0] || r->foot_ground[1])) {
-        getup_detach(r);
-        b2Vec2 v = b2Body_GetLinearVelocity(r->body[RD_CHEST]);
-        v.y = 0.0f;
-        b2Body_SetLinearVelocity(r->body[RD_CHEST], v);
-        b2Body_SetAngularVelocity(r->body[RD_CHEST], 0.0f);
+        /* rendre la main au contrôleur debout avec les pieds réellement posés */
+        b2Vec2 f1 = m2px(b2Body_GetPosition(r->body[RD_FOOT1]));
+        b2Vec2 f2 = m2px(b2Body_GetPosition(r->body[RD_FOOT2]));
+        r->leg1.point = (b2Vec2){ f1.x, r->ground_y };
+        r->leg2.point = (b2Vec2){ f2.x, r->ground_y };
+        set_dir_limits(r, r->dir);
         r->gait = RD_GAIT_STAND;
         r->lying = false;
         r->stepping = false;
@@ -443,7 +433,7 @@ static void update_getup(Ragdoll* r, float dt) {
         r->getup_timer = 0.0f;
         return;
     }
-    if (t > 2.0f) ragdoll_get_up(r); /* nouvelle tentative depuis la pose courante */
+    if (t > 4.0f) ragdoll_get_up(r); /* nouvelle tentative depuis la pose courante */
 }
 
 static void update_crouch_pose(Ragdoll* r) {
