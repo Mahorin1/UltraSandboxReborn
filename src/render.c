@@ -23,6 +23,19 @@ void render_ragdoll(const Ragdoll* r) {
     for (int k = 0; k < RD_PARTS; k++) draw_part(r, order[k]);
 }
 
+void render_drag(const Physics* p) {
+    const DragJoint* d = &p->drag;
+    if (!d->active || !b2Body_IsValid(d->body) || !b2Joint_IsValid(d->joint)) return;
+    b2Vec2 a = m2px(d->target);
+    b2Pos wp = b2Body_GetWorldPoint(d->body, d->local_point);
+    b2Vec2 b = m2px((b2Vec2){ wp.x, wp.y });
+    Vector2 pa = { a.x, a.y }, pb = { b.x, b.y };
+    DrawLineEx(pa, pb, 5.0f, BLACK);
+    DrawLineEx(pa, pb, 2.5f, (Color){ 250, 250, 250, 220 });
+    DrawCircleV(pa, 6.0f, YELLOW); DrawCircleLines((int)pa.x, (int)pa.y, 6.0f, BLACK);
+    DrawCircleV(pb, 6.0f, SKYBLUE); DrawCircleLines((int)pb.x, (int)pb.y, 6.0f, BLACK);
+}
+
 void render_ground(void) {
     DrawRectangle(-8150, 950, 18000, 100, (Color){ 127, 127, 76, 255 });
     DrawRectangleLinesEx((Rectangle){ -8150, 950, 18000, 100 }, 4, BLACK);

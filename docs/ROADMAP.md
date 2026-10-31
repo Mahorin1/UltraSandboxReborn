@@ -10,7 +10,7 @@
 - [x] Test headless avec assertions (ragdoll debout après 10 s)
 
 ## Phase 2 : migration depuis UltraSandbox_Old
-- [ ] 2.1 Drag souris sur les corps (mouse joint, DragJoint) + rotation Q/E
+- [x] 2.1 Drag souris sur les corps (motor joint ressort, DragJoint) + rotation Q/E
 - [ ] 2.2 Entités spawnables : caisse (dégradé), tonneau, scie (textures, son de choc)
 - [ ] 2.3 Ressources : gestionnaire (textures/sons) et audio (limite de sons simultanés, pitch)
 - [ ] 2.4 Caméra : drag, zoom avec tween, shake, suivi

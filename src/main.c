@@ -39,6 +39,16 @@ int main(void) {
             dolls[n++] = ragdoll_create(ph.world, (b2Vec2){ m.x, m.y }, 1.0f);
         }
 
+        /* drag souris : gauche = saisir le corps sous le curseur, Q/E = rotation */
+        Vector2 mouse = GetScreenToWorld2D(GetMousePosition(), cam);
+        if (IsMouseButtonPressed(MOUSE_BUTTON_LEFT))
+            physics_drag_begin(&ph, (b2Vec2){ mouse.x, mouse.y });
+        if (IsMouseButtonDown(MOUSE_BUTTON_LEFT) && ph.drag.active)
+            physics_drag_update(&ph, (b2Vec2){ mouse.x, mouse.y });
+        if (IsMouseButtonReleased(MOUSE_BUTTON_LEFT))
+            physics_drag_end(&ph);
+        physics_drag_rotate(&ph, (IsKeyDown(KEY_E) ? 1 : 0) - (IsKeyDown(KEY_Q) ? 1 : 0), dt);
+
         RagdollInput in = {
             .left = IsKeyDown(KEY_A), .right = IsKeyDown(KEY_D),
             .up = IsKeyDown(KEY_UP), .down = IsKeyDown(KEY_DOWN),
@@ -53,9 +63,10 @@ int main(void) {
         BeginMode2D(cam);
             render_ground();
             for (int i = 0; i < n; i++) { render_ragdoll(dolls[i]); if (debug) render_ragdoll_debug(dolls[i]); }
+            render_drag(&ph);
         EndMode2D();
         DrawText(TextFormat("%d fps | workers %d | bodies %d", GetFPS(), physics_default_workers(), n * RD_PARTS), 19, 910, 20, WHITE);
-        DrawText("A/D marcher | Haut/Bas actif/inactif | H spawn | S slow-mo | F1 debug | clic droit pan | molette zoom", 19, 18, 18, WHITE);
+        DrawText("A/D marcher | clic gauche drag | Q/E rotation | Haut/Bas actif/inactif | H spawn | S slow-mo | F1 debug | clic droit pan | molette zoom", 19, 18, 18, WHITE);
         EndDrawing();
     }
 
