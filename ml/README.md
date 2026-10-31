@@ -52,15 +52,21 @@ Différences assumées, nécessaires à une politique unique :
 ## Commandes
 
 ```sh
-export PKG_CONFIG_PATH=/tmp/us-deps/prefix/lib/pkgconfig   # seulement si box2d est là
-make -C ml
-./ml/train 1500            # entraînement (~2 min)
-./ml/train 1500 --resume   # affinage depuis policy.bin
-./ml/eval                  # évalue policy.bin sur -1 / 0 / +1
-./ml/probe                 # diagnostic de la pose neutre
-make -C ml view && ./ml/view   # visualiseur Raylib (hors `all`) : A/D, R, Espace, molette
-./ml/view autre.bin            # visualiseur avec un autre fichier de poids
+make -C ml          # depuis la racine : train, eval, probe (headless)
+make -C ml view     # + visualiseur Raylib (jamais dans `all`)
+
+cd ml
+./train 1500          # entraînement (~2 min), écrit policy.bin
+./train 1500 --resume # affinage depuis policy.bin
+./eval                # évalue policy.bin sur -1 / 0 / +1
+./probe               # diagnostic de la pose neutre
+./view                # fenêtre Raylib : A/D, R, Espace, molette
+./view autre.bin      # visualiseur avec d'autres poids
 ```
+
+`train`, `eval` et `view` lisent/écrivent `policy.bin` **dans le répertoire
+courant** : lance-les depuis `ml/`. Les poids actuels sont versionnés
+(`ml/policy.bin`, 10 Ko) pour lancer `eval` et `view` sans réentraîner.
 
 ## Visualiseur
 
