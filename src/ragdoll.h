@@ -11,7 +11,10 @@ enum {
     RD_PARTS = 12, RD_JOINTS = 11
 };
 
-typedef struct { bool left, right, up, down, foot_inc, foot_dec; } RagdollInput;
+typedef struct { bool left, right, up, down, run, crouch, foot_inc, foot_dec; } RagdollInput;
+
+/* états du contrôleur actif */
+enum { RD_GAIT_STAND, RD_GAIT_WALK, RD_GAIT_RUN, RD_GAIT_CROUCH, RD_GAIT_GETUP };
 
 typedef struct { b2JointId id; bool active, short_mode; float target, speed; } Articulation;
 typedef struct { bool active; b2Vec2 point, dims; } IkAnim; /* px */
@@ -27,6 +30,19 @@ typedef struct Ragdoll {
     float chest_mid_y, leg_dim_y, walk_angle, foot_step, wake_timer;
     int   dir, group, n_contact;
     bool  active, wake_up, on_ground;
+
+    /* contrôleur actif : équilibre, démarche, relevé */
+    int   gait, stance, swing, getup_phase;
+    float gait_phase, gait_period, step_lift;
+    float swing_x0, swing_x1;
+    float com_x, com_y, com_vx, com_vy, chest_angle, lean;
+    float fall_timer, getup_timer, ground_y, mass;
+    b2WorldId world;
+    b2BodyId getup_anchor;
+    b2JointId getup_joint;
+    float getup_x0, getup_y0;
+    int   foot_contact[2];
+    bool  foot_ground[2], stepping, lying;
 } Ragdoll;
 
 Ragdoll* ragdoll_create(b2WorldId w, b2Vec2 pos_px, float size);
@@ -34,4 +50,5 @@ void ragdoll_destroy(Ragdoll* r);
 void ragdoll_update(Ragdoll* r, float dt, float game_speed, const RagdollInput* in);
 void ragdoll_set_active(Ragdoll* r, bool on);
 void ragdoll_set_dir(Ragdoll* r, int dir);
+void ragdoll_get_up(Ragdoll* r);
 void ragdoll_process_sensor_events(b2WorldId w); /* après chaque b2World_Step */

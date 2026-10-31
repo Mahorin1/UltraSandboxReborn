@@ -1,52 +1,150 @@
-/* Test sans fenêtre : le ragdoll doit se tenir debout après 10 s simulées. */
+/* Tests sans fenêtre : équilibre, marche, course, squat, relevé et drag. */
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include "physics.h"
 #include "ragdoll.h"
 
-int main(int argc, char** argv) {
-    float y = argc > 1 ? (float)atof(argv[1]) : 845.0f;
-    Physics ph; physics_init(&ph, 1);
-    Ragdoll* r = ragdoll_create(ph.world, (b2Vec2){ 600.0f, y }, 1.0f);
-    RagdollInput in = { 0 };
-    float angle = 0.0f, cy = 0.0f;
-    for (int i = 0; i <= 800; i++) {
-        ragdoll_update(r, 1.0f / 80.0f, 1.0f, &in);
-        physics_update(&ph, 1.0f / 80.0f, 1.0f);
-        angle = rad2deg(b2Rot_GetAngle(b2Body_GetRotation(r->body[RD_CHEST])));
-        cy = m2px(b2Body_GetPosition(r->body[RD_CHEST])).y;
-        if (i % 200 == 0)
-            printf("t=%.2fs chest_y=%.0f angle=%.1f ground=%d active=%d\n", i / 80.0, cy, angle, r->on_ground, r->active);
-    }
-    int ok = r->on_ground && r->active && angle > -30.0f && angle < 30.0f && cy < 900.0f;
+#define DT (1.0f / 80.0f)
 
-    /* drag : saisir une caisse au curseur et la tirer de 100 px */
+static void run(Ragdoll* r, Physics* ph, RagdollInput* in, int steps) {
+    for (int i = 0; i < steps; i++) {
+        ragdoll_update(r, DT, 1.0f, in);
+        physics_update(ph, DT, 1.0f);
+    }
+}
+
+static float chest_y(const Ragdoll* r) {
+    return m2px(b2Body_GetPosition(r->body[RD_CHEST])).y;
+}
+
+static float chest_angle(const Ragdoll* r) {
+    return rad2deg(b2Rot_GetAngle(b2Body_GetRotation(r->body[RD_CHEST])));
+}
+
+static int test_idle(void) {
+    Physics ph; physics_init(&ph, 1);
+    Ragdoll* r = ragdoll_create(ph.world, (b2Vec2){ 600.0f, 845.0f }, 1.0f);
+    RagdollInput in = { 0 };
+    for (int i = 0; i <= 800; i++) {
+        run(r, &ph, &in, 1);
+        if (i % 200 == 0)
+            printf("idle t=%.2fs chest_y=%.0f angle=%.1f ground=%d active=%d\n",
+                   i * DT, chest_y(r), chest_angle(r), r->on_ground, r->active);
+    }
+    int ok = r->on_ground && r->active && fabsf(chest_angle(r)) < 15.0f && chest_y(r) < 880.0f;
+    ragdoll_destroy(r); physics_shutdown(&ph);
+    printf("idle: %s\n", ok ? "ok" : "FAIL");
+    return ok;
+}
+
+static int test_walk(void) {
+    Physics ph; physics_init(&ph, 1);
+    Ragdoll* r = ragdoll_create(ph.world, (b2Vec2){ 600.0f, 845.0f }, 1.0f);
+    RagdollInput in = { 0 };
+    run(r, &ph, &in, 160); /* 2 s pour se poser */
+    float x0 = m2px(b2Body_GetPosition(r->body[RD_CHEST])).x;
+    in.right = true;
+    run(r, &ph, &in, 240); /* 3 s de marche */
+    float dx = m2px(b2Body_GetPosition(r->body[RD_CHEST])).x - x0;
+    int ok = dx > 60.0f && fabsf(chest_angle(r)) < 20.0f && chest_y(r) < 880.0f;
+    printf("walk: dx=%.0fpx y=%.0f angle=%.1f gait=%d %s\n",
+           dx, chest_y(r), chest_angle(r), r->gait, ok ? "ok" : "FAIL");
+    ragdoll_destroy(r); physics_shutdown(&ph);
+    return ok;
+}
+
+static int test_run(void) {
+    Physics ph; physics_init(&ph, 1);
+    Ragdoll* r = ragdoll_create(ph.world, (b2Vec2){ 600.0f, 845.0f }, 1.0f);
+    RagdollInput in = { 0 };
+    run(r, &ph, &in, 160);
+    float x0 = m2px(b2Body_GetPosition(r->body[RD_CHEST])).x;
+    in.right = true; in.run = true;
+    run(r, &ph, &in, 240);
+    float dx = m2px(b2Body_GetPosition(r->body[RD_CHEST])).x - x0;
+    int ok = dx > 80.0f && fabsf(chest_angle(r)) < 20.0f && chest_y(r) < 880.0f;
+    printf("run:  dx=%.0fpx y=%.0f angle=%.1f gait=%d %s\n",
+           dx, chest_y(r), chest_angle(r), r->gait, ok ? "ok" : "FAIL");
+    ragdoll_destroy(r); physics_shutdown(&ph);
+    return ok;
+}
+
+static int test_crouch(void) {
+    Physics ph; physics_init(&ph, 1);
+    Ragdoll* r = ragdoll_create(ph.world, (b2Vec2){ 600.0f, 845.0f }, 1.0f);
+    RagdollInput in = { 0 };
+    run(r, &ph, &in, 160);
+    in.crouch = true;
+    run(r, &ph, &in, 320);
+    float low_y = chest_y(r), low_a = chest_angle(r);
+    in.crouch = false;
+    run(r, &ph, &in, 160);
+    int ok = low_y > 865.0f && fabsf(low_a) < 25.0f &&
+             chest_y(r) < 865.0f && fabsf(chest_angle(r)) < 15.0f;
+    printf("crouch: low_y=%.0f low_a=%.1f stand_y=%.0f stand_a=%.1f %s\n",
+           low_y, low_a, chest_y(r), chest_angle(r), ok ? "ok" : "FAIL");
+    ragdoll_destroy(r); physics_shutdown(&ph);
+    return ok;
+}
+
+static int test_getup(void) {
+    Physics ph; physics_init(&ph, 1);
+    Ragdoll* r = ragdoll_create(ph.world, (b2Vec2){ 600.0f, 845.0f }, 1.0f);
+    RagdollInput in = { 0 };
+    run(r, &ph, &in, 120);
+    ragdoll_set_active(r, false);
+    run(r, &ph, &in, 120); /* chute passive : le ragdoll est couché */
+    ragdoll_set_active(r, true);
+    for (int i = 0; i < 400; i++) {
+        run(r, &ph, &in, 1);
+    }
+    int ok = r->gait == RD_GAIT_STAND && fabsf(chest_angle(r)) < 30.0f && chest_y(r) < 880.0f;
+    printf("getup: y=%.0f angle=%.1f gait=%d active=%d %s\n",
+           chest_y(r), chest_angle(r), r->gait, r->active, ok ? "ok" : "FAIL");
+    ragdoll_destroy(r); physics_shutdown(&ph);
+    return ok;
+}
+
+static int test_drag(void) {
+    Physics ph; physics_init(&ph, 1);
     b2BodyDef bd = b2DefaultBodyDef();
     bd.type = b2_dynamicBody;
     bd.position = px2m((b2Vec2){ 300.0f, 900.0f });
-    b2BodyId box_body = b2CreateBody(ph.world, &bd);
+    b2BodyId box = b2CreateBody(ph.world, &bd);
     b2ShapeDef sd = b2DefaultShapeDef();
     b2Polygon poly = b2MakeBox(0.3f, 0.3f);
-    b2CreatePolygonShape(box_body, &sd, &poly);
+    b2CreatePolygonShape(box, &sd, &poly);
 
-    b2Vec2 drag_start = m2px(b2Body_GetPosition(box_body));
-    physics_drag_begin(&ph, drag_start);
+    b2Vec2 start = m2px(b2Body_GetPosition(box));
+    physics_drag_begin(&ph, start);
     int grabbed = ph.drag.active && b2Body_IsValid(ph.drag.body);
     physics_drag_rotate(&ph, 1, 0.5f);
-    int spun = b2Body_GetAngularVelocity(box_body) > 0.0f;
-    b2Body_SetAngularVelocity(box_body, 0.0f);
-    for (int i = 0; i < 80; i++) {
-        physics_drag_update(&ph, (b2Vec2){ drag_start.x + 100.0f, drag_start.y });
-        physics_update(&ph, 1.0f / 80.0f, 1.0f);
-    }
-    float moved = m2px(b2Body_GetPosition(box_body)).x - drag_start.x;
-    physics_drag_end(&ph);
-    int drag_ok = grabbed && spun && moved > 40.0f && !ph.drag.active;
-    printf("drag: grabbed=%d spun=%d moved=%.0fpx released=%d\n", grabbed, spun, moved, !ph.drag.active);
-    b2DestroyBody(box_body);
+    int spun = b2Body_GetAngularVelocity(box) > 0.0f;
+    b2Body_SetAngularVelocity(box, 0.0f);
 
-    ok = ok && drag_ok;
-    printf(ok ? "PASS\n" : "FAIL\n");
+    Ragdoll* r = ragdoll_create(ph.world, (b2Vec2){ 600.0f, 845.0f }, 1.0f);
+    for (int i = 0; i < 80; i++) {
+        physics_drag_update(&ph, (b2Vec2){ start.x + 100.0f, start.y });
+        physics_update(&ph, DT, 1.0f);
+    }
+    float moved = m2px(b2Body_GetPosition(box)).x - start.x;
+    physics_drag_end(&ph);
+    int ok = grabbed && spun && moved > 40.0f && !ph.drag.active;
+    printf("drag: grabbed=%d spun=%d moved=%.0fpx released=%d %s\n",
+           grabbed, spun, moved, !ph.drag.active, ok ? "ok" : "FAIL");
     ragdoll_destroy(r); physics_shutdown(&ph);
+    return ok;
+}
+
+int main(void) {
+    int ok = 1;
+    ok &= test_idle();
+    ok &= test_walk();
+    ok &= test_run();
+    ok &= test_crouch();
+    ok &= test_getup();
+    ok &= test_drag();
+    printf(ok ? "PASS\n" : "FAIL\n");
     return ok ? 0 : 1;
 }

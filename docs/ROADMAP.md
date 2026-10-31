@@ -11,6 +11,7 @@
 
 ## Phase 2 : migration depuis UltraSandbox_Old
 - [x] 2.1 Drag souris sur les corps (motor joint ressort, DragJoint) + rotation Q/E
+- [x] Active ragdoll : équilibre, marche, course, accroupissement, relevé par appui des coudes
 - [ ] 2.2 Entités spawnables : caisse (dégradé), tonneau, scie (textures, son de choc)
 - [ ] 2.3 Ressources : gestionnaire (textures/sons) et audio (limite de sons simultanés, pitch)
 - [ ] 2.4 Caméra : drag, zoom avec tween, shake, suivi

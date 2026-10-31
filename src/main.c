@@ -52,6 +52,8 @@ int main(void) {
         RagdollInput in = {
             .left = IsKeyDown(KEY_A), .right = IsKeyDown(KEY_D),
             .up = IsKeyDown(KEY_UP), .down = IsKeyDown(KEY_DOWN),
+            .run = IsKeyDown(KEY_LEFT_SHIFT),
+            .crouch = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_C),
             .foot_inc = IsKeyDown(KEY_I), .foot_dec = IsKeyDown(KEY_K),
         };
         for (int i = 0; i < n; i++)
@@ -66,7 +68,7 @@ int main(void) {
             render_drag(&ph);
         EndMode2D();
         DrawText(TextFormat("%d fps | workers %d | bodies %d", GetFPS(), physics_default_workers(), n * RD_PARTS), 19, 910, 20, WHITE);
-        DrawText("A/D marcher | clic gauche drag | Q/E rotation | Haut/Bas actif/inactif | H spawn | S slow-mo | F1 debug | clic droit pan | molette zoom", 19, 18, 18, WHITE);
+        DrawText("A/D bouger | Shift courir | Ctrl/C accroupi | Haut relever | Bas ragdoll | clic gauche drag | Q/E rotation | H spawn | S slow-mo | F1 debug", 19, 18, 18, WHITE);
         EndDrawing();
     }
 
