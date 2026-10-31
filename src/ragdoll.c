@@ -217,6 +217,32 @@ void ragdoll_get_up(Ragdoll* r) {
     r->lying = true;
 }
 
+void ragdoll_set_policy(Ragdoll* r, bool on) {
+    r->policy_on = on;
+    r->policy_acc = 0.0f;
+    r->policy_t = 0.0f;
+    r->policy_cmd = 0.0f;
+    if (!on) {
+        /* rendre la main au contrôleur classique, qui se remet en pose debout */
+        r->active = false;
+        ragdoll_set_active(r, true);
+        return;
+    }
+    /* limites symétriques : celles de ml/rd_old.c, sans miroir de direction */
+    lim(r, 0, -70, 70);
+    lim(r, 1, -180, 180); lim(r, 2, -180, 180);
+    lim(r, 3, -150, 150); lim(r, 4, -150, 150);
+    lim(r, 5, -120, 120); lim(r, 6, -120, 120);
+    lim(r, 7, -140, 140); lim(r, 8, -140, 140);
+    lim(r, 9, -90, 90);   lim(r, 10, -90, 90);
+    for (int i = 0; i < RD_JOINTS; i++) {
+        r->art[i].active = true;
+        b2RevoluteJoint_EnableMotor(r->art[i].id, true);
+        b2RevoluteJoint_EnableLimit(r->art[i].id, true);
+    }
+    r->active = false; /* le contrôleur classique ne pilote plus */
+}
+
 static void set_j(Ragdoll* r, int i, float deg, float speed, float force) {
     r->art[i].target = deg2rad(deg);
     r->art[i].speed = speed;
@@ -242,7 +268,7 @@ static b2Vec2 ik(const IkAnim* k, b2Vec2 pos, b2Vec2 target, int dir) {
 
 /* ---------- contrôleur actif ---------- */
 
-static void update_com(Ragdoll* r) {
+void ragdoll_update_com(Ragdoll* r) {
     float msum = 0.0f, x = 0.0f, y = 0.0f, vx = 0.0f, vy = 0.0f;
     for (int i = 0; i < RD_PARTS; i++) {
         float m = b2Body_GetMass(r->body[i]);
@@ -470,7 +496,7 @@ static void apply_targets(Ragdoll* r) {
 
 void ragdoll_update(Ragdoll* r, float dt, float gs, const RagdollInput* in) {
     float adt = dt * (gs > 0.0f ? gs : 1.0f);
-    update_com(r);
+    ragdoll_update_com(r);
     r->chest_angle = b2Rot_GetAngle(b2Body_GetRotation(r->body[RD_CHEST]));
     float upright = fabsf(cap_rad2(r->chest_angle));
 

@@ -39,6 +39,10 @@ typedef struct Ragdoll {
     float fall_timer, getup_timer, ground_y, mass;
     int   foot_contact[2];
     bool  foot_ground[2], stepping, lying;
+
+    /* mode politique neuronale (src/policy.c) : le contrôleur classique est inactif */
+    bool  policy_on;
+    float policy_acc, policy_t, policy_cmd;
 } Ragdoll;
 
 Ragdoll* ragdoll_create(b2WorldId w, b2Vec2 pos_px, float size);
@@ -48,3 +52,8 @@ void ragdoll_set_active(Ragdoll* r, bool on);
 void ragdoll_set_dir(Ragdoll* r, int dir);
 void ragdoll_get_up(Ragdoll* r);
 void ragdoll_process_sensor_events(b2WorldId w); /* après chaque b2World_Step */
+
+/* bascule sur la politique neuronale : limites symétriques, moteurs armés */
+void ragdoll_set_policy(Ragdoll* r, bool on);
+/* centre de masse du pantin, en px/s (utilisé par src/policy.c) */
+void ragdoll_update_com(Ragdoll* r);

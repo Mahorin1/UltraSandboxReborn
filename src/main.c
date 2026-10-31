@@ -1,6 +1,7 @@
 #include <raylib.h>
 #include <stdio.h>
 #include "physics.h"
+#include "policy.h"
 #include "ragdoll.h"
 #include "render.h"
 
@@ -17,6 +18,11 @@ int main(void) {
     int n = 0;
     dolls[n++] = ragdoll_create(ph.world, (b2Vec2){ 600.0f, 300.0f }, 1.0f);
 
+    /* politique entraînée avec la physique du jeu : ./ml/train 1500 --game */
+    Policy policy;
+    bool has_policy = policy_load(&policy, "ml/policy_game.bin") ||
+                      policy_load(&policy, "policy_game.bin");
+
     bool debug = false;
     Camera2D cam = { .offset = { 850, 475 }, .target = { 850, 475 }, .zoom = 1.0f };
 
@@ -24,6 +30,8 @@ int main(void) {
         float dt = GetFrameTime();
         if (dt > 0.1f) dt = 0.1f;
         if (IsKeyPressed(KEY_F1)) debug = !debug;
+        if (IsKeyPressed(KEY_F2) && has_policy)
+            ragdoll_set_policy(dolls[0], !dolls[0]->policy_on);
         float speed = IsKeyDown(KEY_S) ? 0.15f : 1.0f;
 
         /* caméra : clic droit = pan, molette = zoom */
@@ -56,8 +64,14 @@ int main(void) {
             .crouch = IsKeyDown(KEY_LEFT_CONTROL) || IsKeyDown(KEY_C),
             .foot_inc = IsKeyDown(KEY_I), .foot_dec = IsKeyDown(KEY_K),
         };
-        for (int i = 0; i < n; i++)
-            ragdoll_update(dolls[i], dt, speed, i == 0 ? &in : &(RagdollInput){ 0 });
+        if (dolls[0]->policy_on) {
+            float cmd = (in.right ? 1.0f : 0.0f) - (in.left ? 1.0f : 0.0f);
+            ragdoll_policy_update(dolls[0], &policy, dt * speed, cmd);
+        } else {
+            ragdoll_update(dolls[0], dt, speed, &in);
+        }
+        for (int i = 1; i < n; i++)
+            ragdoll_update(dolls[i], dt, speed, &(RagdollInput){ 0 });
         physics_update(&ph, dt, speed);
 
         BeginDrawing();
@@ -69,6 +83,11 @@ int main(void) {
         EndMode2D();
         DrawText(TextFormat("%d fps | workers %d | bodies %d", GetFPS(), physics_default_workers(), n * RD_PARTS), 19, 910, 20, WHITE);
         DrawText("A/D bouger | Shift courir | Ctrl/C accroupi | Haut relever | Bas ragdoll | clic gauche drag | Q/E rotation | H spawn | S slow-mo | F1 debug", 19, 18, 18, WHITE);
+        DrawText(has_policy
+                     ? TextFormat("F2 politique neuronale : %s (A/D commande)",
+                                  dolls[0]->policy_on ? "ON" : "OFF")
+                     : "F2 politique neuronale : ml/policy_game.bin absent",
+                 19, 42, 18, dolls[0]->policy_on ? (Color){ 120, 230, 150, 255 } : WHITE);
         EndDrawing();
     }
 

@@ -68,6 +68,26 @@ cd ml
 courant** : lance-les depuis `ml/`. Les poids actuels sont versionnés
 (`ml/policy.bin`, 10 Ko) pour lancer `eval` et `view` sans réentraîner.
 
+## Intégration dans le jeu
+
+Le jeu tourne en gravité 18 et pas fixe 1/80 (`src/physics.c`) : une politique
+entraînée avec la physique `ml/` (9.81, 1/60) ne s'y transpose pas. Le mode
+`--game` reproduit la physique du jeu dans l'environnement et écrit des
+checkpoints séparés :
+
+```sh
+cd ml
+./train 1500 --game   # -> policy_game.bin
+./eval --game         # évalue policy_game.bin avec la physique du jeu
+./view --game         # visualiseur à la physique du jeu
+```
+
+`src/policy.c` charge `ml/policy_game.bin` au démarrage et l'applique au
+ragdoll réel : **F2** bascule le pantin sur la politique, **A/D** commandent la
+marche. Sans le fichier, la touche est sans effet et le HUD l'indique.
+`make test` vérifie le forward de la politique (borné, déterministe) et un
+pilotage de 2 s sans NaN, sans dépendre d'un fichier de poids.
+
 ## Visualiseur
 
 `ml/view.c` dessine le même `Env` que `eval` (donc exactement ce qui est
@@ -88,7 +108,9 @@ Le binaire reste hors de `all` : `make -C ml` ne demande pas Raylib, seul
 
 `train` et `eval` écrivent/lisent `ml/policy.bin` (ignoré par git).
 
-## Résultats mesurés (1500 générations, checkpoint validé)
+## Résultats mesurés
+
+### Physique ml (g=9.81, dt=1/60), 1500 générations
 
 | commande | déplacement sur 4 s | upright moyen | durée avant chute |
 |---|---|---|---|
@@ -96,10 +118,21 @@ Le binaire reste hors de `all` : `make -C ml` ne demande pas Raylib, seul
 | immobile | −0.479 m | 0.92 | ~0.95 s |
 | droite | +0.093 m | 0.89 | ~1.1 s |
 
-Les deux directions sont suivies, mais **l'équilibre n'est pas robuste** : la
-politique tombe encore en une seconde et dérive quand on lui demande de rester
-sur place. Le score de validation progresse (≈ +10 → +171) et les blocs
-directionnels atteignent une récompense moyenne de 356 (gauche) et 76 (droite).
+### Physique du jeu (g=18, dt=1/80), 2500 générations, `--game`
+
+| commande | déplacement sur 4 s | upright moyen | durée avant chute |
+|---|---|---|---|
+| gauche | −0.373 m | 0.83 | ~0.6 s |
+| immobile | +0.098 m | 0.87 | ~0.4 s |
+| droite | +0.136 m | 0.89 | ~0.3 s |
+
+Les directions sont correctes dans les deux physiques (`eval` PASS), mais
+**l'équilibre reste fragile** : 0.3 à 1.1 s avant la chute. C'est la politique
+`--game` que charge `src/policy.c` dans le jeu.
+
+Le checkpoint est choisi par validation (3 commandes, sans poussée) **avec le
+sens de marche récompensé** : sans ce terme, une politique qui part toujours du
+même côté obtient un meilleur score tout en échouant à `eval`.
 
 ## Limites / suite
 

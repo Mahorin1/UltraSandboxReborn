@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include "physics.h"
+#include "policy.h"
 #include "ragdoll.h"
 
 #define DT (1.0f / 80.0f)
@@ -137,6 +138,48 @@ static int test_drag(void) {
     return ok;
 }
 
+/* politique : forward borné/déterministe et pilotage sans NaN (poids aléatoires) */
+static int test_policy(void) {
+    Policy pol;
+    memset(&pol, 0, sizeof pol);
+    unsigned s = 7u;
+    float* fields[6] = { pol.w1, pol.b1, pol.w2, pol.b2, pol.w3, pol.b3 };
+    int sizes[6] = { POLICY_OBS * POLICY_H1, POLICY_H1, POLICY_H1 * POLICY_H2,
+                     POLICY_H2, POLICY_H2 * POLICY_ACT, POLICY_ACT };
+    for (int f = 0; f < 6; f++) {
+        for (int i = 0; i < sizes[f]; i++) {
+            s = s * 1664525u + 1013904223u;
+            fields[f][i] = ((float)(s >> 8) / 16777216.0f - 0.5f) * 0.6f;
+        }
+    }
+    pol.loaded = true;
+
+    float obs[POLICY_OBS], a1[POLICY_ACT], a2[POLICY_ACT];
+    for (int i = 0; i < POLICY_OBS; i++) obs[i] = 0.1f * (float)(i % 7) - 0.3f;
+    policy_forward(&pol, obs, a1);
+    policy_forward(&pol, obs, a2);
+    int deterministic = 1, bounded = 1;
+    for (int i = 0; i < POLICY_ACT; i++) {
+        if (a1[i] != a2[i]) deterministic = 0;
+        if (!(a1[i] >= -1.0f && a1[i] <= 1.0f)) bounded = 0;
+    }
+
+    Physics ph; physics_init(&ph, 1);
+    Ragdoll* r = ragdoll_create(ph.world, (b2Vec2){ 600.0f, 845.0f }, 1.0f);
+    ragdoll_set_policy(r, true);
+    for (int i = 0; i < 160; i++) {
+        ragdoll_policy_update(r, &pol, DT, 0.0f);
+        physics_update(&ph, DT, 1.0f);
+    }
+    b2Vec2 p = m2px(b2Body_GetPosition(r->body[RD_CHEST]));
+    int finite = isfinite(p.x) && isfinite(p.y) && r->policy_on;
+    int ok = deterministic && bounded && finite;
+    printf("policy: deterministe=%d borne=%d fini=%d chest=(%.0f,%.0f) %s\n",
+           deterministic, bounded, finite, p.x, p.y, ok ? "ok" : "FAIL");
+    ragdoll_destroy(r); physics_shutdown(&ph);
+    return ok;
+}
+
 int main(void) {
     int ok = 1;
     ok &= test_idle();
@@ -145,6 +188,7 @@ int main(void) {
     ok &= test_crouch();
     ok &= test_getup();
     ok &= test_drag();
+    ok &= test_policy();
     printf(ok ? "PASS\n" : "FAIL\n");
     return ok ? 0 : 1;
 }
