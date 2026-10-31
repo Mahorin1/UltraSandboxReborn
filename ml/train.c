@@ -9,7 +9,7 @@
 #define H1 32
 #define H2 32
 #define POP 48
-#define STEPS 240 /* 4 s à 60 Hz */
+#define ROLL_SECONDS 4.0f
 
 typedef struct { float reward, upright, dx, steps; } Roll;
 
@@ -41,13 +41,14 @@ static int load_policy(const char* path, float* out, int n) {
     return ok;
 }
 
-static Roll rollout(Env* env, Nn* nn, const float* theta, unsigned seed, float cmd, bool push) {
+static Roll rollout(Env* env, Nn* nn, const float* theta, unsigned seed, float cmd, bool push,
+                    int steps) {
     nn_set_params(nn, theta);
     env_reset(env, seed, cmd, push);
     float obs[ENV_OBS], act[ENV_ACT];
     Roll r = { 0.0f, 0.0f, 0.0f, 0.0f };
     float x0 = env_x(env);
-    for (int t = 0; t < STEPS; t++) {
+    for (int t = 0; t < steps; t++) {
         env_obs(env, obs);
         nn_forward(nn, obs, act);
         bool done = false;
@@ -63,15 +64,33 @@ static Roll rollout(Env* env, Nn* nn, const float* theta, unsigned seed, float c
 
 /* score de validation : mêmes conditions que eval (sans poussée, 3 commandes).
    Sert à ne sauvegarder que la meilleure politique réellement évaluée. */
-static float validate(Env* env, Nn* nn, const float* theta) {
+static float clamp01(float v) { return v < 0.0f ? 0.0f : (v > 1.0f ? 1.0f : v); }
+
+static float validate(Env* env, Nn* nn, const float* theta, int steps) {
     float s = 0.0f;
-    for (int c = 0; c < 3; c++)
-        s += rollout(env, nn, theta, 4242u + (unsigned)c, (float)(c - 1), false).reward;
+    for (int c = 0; c < 3; c++) {
+        float cmd = (float)(c - 1);
+        Roll r = rollout(env, nn, theta, 4242u + (unsigned)c, cmd, false, steps);
+        s += r.reward;
+        /* même critère que eval : récompenser le bon sens, pénaliser la dérive.
+           Sans ça, une politique qui part toujours du même côté gagne en score. */
+        if (cmd < -0.5f) s += 40.0f * clamp01(-r.dx);
+        else if (cmd > 0.5f) s += 40.0f * clamp01(r.dx);
+        else s -= 40.0f * clamp01(fabsf(r.dx));
+    }
     return s / 3.0f;
 }
 
 int main(int argc, char** argv) {
-    int gens = (argc > 1) ? atoi(argv[1]) : 200;
+    int gens = 200;
+    bool game = false, resume = false;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--game") == 0) game = true;
+        else if (strcmp(argv[i], "--resume") == 0) resume = true;
+        else if (argv[i][0] != '-') gens = atoi(argv[i]);
+    }
+    const char* ckpt_path = game ? "policy_game.bin" : "policy.bin";
+    const char* latest_path = game ? "latest_game.bin" : "latest.bin";
     const int pop = POP, pairs = POP / 2;
     const unsigned seed = 12345u;
 
@@ -82,22 +101,43 @@ int main(int argc, char** argv) {
     es_init(&es, np, POP, 0.08f, 0.03f, seed);
 
     Env* env = env_create(seed);
+    /* --game : mêmes conditions que src/physics.c (gravité 18, pas 1/80, 4 sous-pas) */
+    if (game) env_set_physics(env, 18.0f, 1.0f / 80.0f, 4);
+    const int steps = (int)lroundf(ROLL_SECONDS / env_dt(env));
+
     float* theta = malloc(sizeof(float) * (size_t)np);
     float* rewards = malloc(sizeof(float) * (size_t)pop);
     if (!env || !theta || !rewards) { fprintf(stderr, "alloc\n"); return 1; }
 
     unsigned crng = seed ^ 0xabcdu;
     float best_val = -1e9f;
-    bool resume = (argc > 2 && strcmp(argv[2], "--resume") == 0);
-    if (resume && (load_policy("latest.bin", es.mean, np) || load_policy("policy.bin", es.mean, np))) {
-        printf("reprise depuis le dernier checkpoint\n");
-        es.lr = 0.015f; /* passe d'affinage : on ne casse pas ce qui marche */
-        best_val = validate(env, nn, es.mean);
-        printf("validation initiale %+.2f\n", best_val);
-    } else {
-        resume = false;
+    if (resume) {
+        /* repartir du meilleur des deux checkpoints : reprendre aveuglément
+           latest.bin écraserait un record par une politique moins bonne */
+        float* alt = malloc(sizeof(float) * (size_t)np);
+        bool ok_latest = alt && load_policy(latest_path, es.mean, np);
+        bool ok_ckpt = alt && load_policy(ckpt_path, alt, np);
+        float v_latest = ok_latest ? validate(env, nn, es.mean, steps) : -1e9f;
+        float v_ckpt = ok_ckpt ? validate(env, nn, alt, steps) : -1e9f;
+        if (v_ckpt >= v_latest) {
+            if (ok_ckpt) memcpy(es.mean, alt, sizeof(float) * (size_t)np);
+            best_val = v_ckpt;
+            printf("reprise depuis %s\n", ckpt_path);
+        } else {
+            best_val = v_latest;
+            printf("reprise depuis %s\n", latest_path);
+        }
+        free(alt);
+        if (best_val < -1e8f) {
+            resume = false;
+            best_val = -1e9f;
+        } else {
+            es.lr = 0.015f; /* passe d'affinage : on ne casse pas ce qui marche */
+            printf("validation initiale %+.2f\n", best_val);
+        }
     }
-    printf("policy: %d params, pop %d, %d genera\n", np, pop, gens);
+    printf("policy: %d params, pop %d, %d genera%s%s, %d pas/rollout\n", np, pop, gens,
+           game ? ", physique du jeu (g=18, dt=1/80)" : "", resume ? ", reprise" : "", steps);
     fflush(stdout);
 
     for (int g = 0; g < gens; g++) {
@@ -117,9 +157,9 @@ int main(int argc, char** argv) {
         for (int p = 0; p < pairs; p++) {
             unsigned ep_seed = (unsigned)(g * 977 + p * 13 + 1);
             es_sample_fresh(&es, p, +1, theta);
-            Roll rp = rollout(env, nn, theta, ep_seed, cmd, push);
+            Roll rp = rollout(env, nn, theta, ep_seed, cmd, push, steps);
             es_sample_fresh(&es, p, -1, theta);
-            Roll rm = rollout(env, nn, theta, ep_seed, cmd, push);
+            Roll rm = rollout(env, nn, theta, ep_seed, cmd, push, steps);
             rewards[2 * p] = rp.reward;
             rewards[2 * p + 1] = rm.reward;
             sum += rp.reward + rm.reward;
@@ -135,23 +175,23 @@ int main(int argc, char** argv) {
         fflush(stdout);
 
         if (g % 25 == 24) {
-            save_policy("latest.bin", es.mean, np);
-            float v = validate(env, nn, es.mean);
+            save_policy(latest_path, es.mean, np);
+            float v = validate(env, nn, es.mean, steps);
             if (v > best_val) {
                 best_val = v;
-                save_policy("policy.bin", es.mean, np);
+                save_policy(ckpt_path, es.mean, np);
                 printf("  -> nouveau meilleur (validation %+.1f)\n", v);
                 fflush(stdout);
             }
         }
     }
 
-    if (best_val < -1e8f) save_policy("policy.bin", es.mean, np);
+    if (best_val < -1e8f) save_policy(ckpt_path, es.mean, np);
     es_free(&es);
     env_destroy(env);
     nn_destroy(nn);
     free(theta);
     free(rewards);
-    printf("saved policy.bin (meilleure validation %+.2f)\n", best_val);
+    printf("saved %s (meilleure validation %+.2f)\n", ckpt_path, best_val);
     return 0;
 }

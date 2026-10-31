@@ -7,7 +7,7 @@
 
 #define H1 32
 #define H2 32
-#define STEPS 240 /* 4 s */
+#define EVAL_SECONDS 4.0f
 
 static int load_policy(const char* path, float* out, int n) {
     FILE* f = fopen(path, "rb");
@@ -25,14 +25,14 @@ static int load_policy(const char* path, float* out, int n) {
     return 1;
 }
 
-static void run(Env* env, const Nn* nn, const float* theta, float cmd, unsigned seed,
-                float* dx, float* up, float* steps) {
+static void run(Env* env, const Nn* nn, const float* theta, float cmd, unsigned seed, int steps,
+                float* dx, float* up, float* steps_out) {
     nn_set_params((Nn*)nn, theta);
     env_reset(env, seed, cmd, false);
     float obs[ENV_OBS], act[ENV_ACT];
     float x0 = env_x(env), u = 0.0f;
     int n = 0;
-    for (int t = 0; t < STEPS; t++) {
+    for (int t = 0; t < steps; t++) {
         env_obs(env, obs);
         nn_forward(nn, obs, act);
         bool done = false;
@@ -43,25 +43,37 @@ static void run(Env* env, const Nn* nn, const float* theta, float cmd, unsigned 
     }
     *dx = env_x(env) - x0;
     *up = u / (float)n;
-    *steps = (float)n;
+    *steps_out = (float)n;
 }
 
 int main(int argc, char** argv) {
-    const char* path = (argc > 1) ? argv[1] : "policy.bin";
+    const char* path = NULL;
+    bool game = false;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--game") == 0) game = true;
+        else if (argv[i][0] != '-') path = argv[i];
+    }
+    if (!path) path = game ? "policy_game.bin" : "policy.bin";
+
     Nn* nn = nn_create(ENV_OBS, H1, H2, ENV_ACT, 1u);
     const int np = nn_param_count(nn);
     float* theta = malloc(sizeof(float) * (size_t)np);
     if (!theta || !load_policy(path, theta, np)) return 1;
 
     Env* env = env_create(7u);
+    if (game) env_set_physics(env, 18.0f, 1.0f / 80.0f, 4);
+    const int steps = (int)lroundf(EVAL_SECONDS / env_dt(env));
+
     const float cmds[3] = { -1.0f, 0.0f, 1.0f };
     float mean_dx[3] = { 0 }, mean_up[3] = { 0 }, mean_steps[3] = { 0 };
 
+    printf("%s : %s, %d pas\n", path, game ? "physique du jeu (g=18, dt=1/80)" : "physique ml (g=9.81, dt=1/60)",
+           steps);
     printf("cmd      dx(m)   upright  steps\n");
     for (int c = 0; c < 3; c++) {
         for (unsigned s = 1; s <= 3; s++) {
             float dx, up, st;
-            run(env, nn, theta, cmds[c], s, &dx, &up, &st);
+            run(env, nn, theta, cmds[c], s, steps, &dx, &up, &st);
             mean_dx[c] += dx / 3.0f;
             mean_up[c] += up / 3.0f;
             mean_steps[c] += st / 3.0f;

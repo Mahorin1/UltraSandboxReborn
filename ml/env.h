@@ -4,10 +4,15 @@
 
 #define ENV_OBS 32
 #define ENV_ACT RD_OLD_JOINTS
+#define ENV_DT_DEFAULT (1.0f / 60.0f)
 
 typedef struct Env Env;
 
 Env*  env_create(unsigned seed);
+
+/* physique alternative : le jeu tourne en gravité 18, pas 1/80, 4 sous-pas */
+void  env_set_physics(Env* e, float gravity, float dt, int substeps);
+float env_dt(const Env* e);
 void  env_destroy(Env* e);
 
 /* cmd : -1 (gauche), 0 (rester), +1 (droite). push : perturbation aléatoire. */

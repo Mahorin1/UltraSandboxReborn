@@ -121,7 +121,11 @@ static const char* cmd_label(float cmd) {
 
 int main(int argc, char** argv) {
     const char* path = "policy.bin";
-    if (argc > 1 && argv[1][0] != '-') path = argv[1];
+    bool game = false;
+    for (int i = 1; i < argc; i++) {
+        if (strcmp(argv[i], "--game") == 0) game = true;
+        else if (argv[i][0] != '-') path = argv[i];
+    }
 
     Nn* nn = nn_create(ENV_OBS, H1, H2, ENV_ACT, 1u);
     if (!nn) { fprintf(stderr, "nn_create: echec\n"); return 1; }
@@ -138,9 +142,10 @@ int main(int argc, char** argv) {
 
     Env* env = env_create(1234u);
     if (!env) { free(theta); nn_destroy(nn); return 1; }
+    if (game) env_set_physics(env, 18.0f, 1.0f / 80.0f, 4);
 
     InitWindow(WIN_W, WIN_H, "ragdoll Old - politique ES (A/D pour marcher)");
-    SetTargetFPS(60);
+    SetTargetFPS(game ? 80 : 60);
 
     Camera2D cam = { 0 };
     cam.offset = (Vector2){ WIN_W * 0.5f, WIN_H * 0.58f };
@@ -188,7 +193,7 @@ int main(int argc, char** argv) {
             env_obs(env, obs);
             nn_forward(nn, obs, act);
             env_step(env, act, &done);
-            ep_time += 1.0f / 60.0f;
+            ep_time += env_dt(env);
             if (done) { last_time = ep_time; frozen = FALL_PAUSE; }
         }
 

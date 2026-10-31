@@ -3,7 +3,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-#define DT          (1.0f / 60.0f)
 #define EPISODE_S   6.0f
 #define GROUND_Y    0.0f      /* dessus du sol (y vers le bas, comme le jeu) */
 #define SPAWN_CHEST (-1.63f)  /* torse au-dessus du sol */
@@ -13,6 +12,8 @@ struct Env {
     b2WorldId world;
     b2BodyId  ground;
     RdOld*    rd;
+    float     dt, gravity;
+    int       substeps;
     float     t;
     float     cmd;
     int       group;
@@ -49,9 +50,12 @@ Env* env_create(unsigned seed) {
     if (!e) return NULL;
     e->rng = seed | 1u;
     e->group = 1;
+    e->dt = ENV_DT_DEFAULT;
+    e->gravity = 9.81f;
+    e->substeps = 8;
 
     b2WorldDef wd = b2DefaultWorldDef();
-    wd.gravity = (b2Vec2){ 0.0f, 9.81f }; /* y vers le bas, gravité réaliste */
+    wd.gravity = (b2Vec2){ 0.0f, e->gravity }; /* y vers le bas */
     wd.enableSleep = false;
     e->world = b2CreateWorld(&wd);
 
@@ -139,10 +143,10 @@ float env_step(Env* e, const float* action, bool* done) {
     }
     rd_old_apply_tau(e->rd, tau);
 
-    b2World_Step(e->world, DT, 8);
+    b2World_Step(e->world, e->dt, e->substeps);
     rd_old_process_sensors(e->rd);
     update_com(e);
-    e->t += DT;
+    e->t += e->dt;
 
     if (e->push && !e->pushed && e->t > PUSH_T) {
         float dir = frand(&e->rng) < 0.5f ? -1.0f : 1.0f;
@@ -194,6 +198,17 @@ b2WorldId env_world(const Env* e) { return e->world; }
 const RdOld* env_rag(const Env* e) { return e->rd; }
 
 void env_push(Env* e, float dir) {
+    /* impulsion proportionnelle à la gravité pour rester comparable */
+    float k = 0.12f * (e->gravity / 9.81f);
     b2Body_ApplyLinearImpulseToCenter(e->rd->body[RD_CHEST],
-                                      (b2Vec2){ dir * 0.12f, 0.0f }, true);
+                                      (b2Vec2){ dir * k, 0.0f }, true);
 }
+
+void env_set_physics(Env* e, float gravity, float dt, int substeps) {
+    e->gravity = gravity;
+    e->dt = dt > 0.0f ? dt : ENV_DT_DEFAULT;
+    e->substeps = substeps > 0 ? substeps : 8;
+    b2World_SetGravity(e->world, (b2Vec2){ 0.0f, e->gravity });
+}
+
+float env_dt(const Env* e) { return e->dt; }
