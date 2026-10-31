@@ -58,7 +58,27 @@ make -C ml
 ./ml/train 1500 --resume   # affinage depuis policy.bin
 ./ml/eval                  # évalue policy.bin sur -1 / 0 / +1
 ./ml/probe                 # diagnostic de la pose neutre
+make -C ml view && ./ml/view   # visualiseur Raylib (hors `all`) : A/D, R, Espace, molette
+./ml/view autre.bin            # visualiseur avec un autre fichier de poids
 ```
+
+## Visualiseur
+
+`ml/view.c` dessine le même `Env` que `eval` (donc exactement ce qui est
+évalué, aucune logique dupliquée) : booléens, géométrie Box2D et politique
+partagés.
+
+- **A/D** ou flèches : commande gauche/droite (relance une tentative à chaque
+  changement, comme en évaluation) ; **R** : reset ; **Espace** : impulsion
+  horizontale pour tester l'auto-équilibre ; **molette** : zoom.
+- caméra qui suit en x avec lissage, cadrage fixe en y (sol toujours visible),
+  zoom par défaut 240 px/m ; repère pointillé au point de départ et graduations
+  au sol pour que le déplacement se voie malgré la caméra qui suit.
+- HUD : commande, `dx`, vitesse, verticalité, hauteur du torse, contact des
+  pieds, durée de l'épisode et « CHUTE après X s ».
+
+Le binaire reste hors de `all` : `make -C ml` ne demande pas Raylib, seul
+`make -C ml view` en a besoin.
 
 `train` et `eval` écrivent/lisent `ml/policy.bin` (ignoré par git).
 

@@ -22,3 +22,11 @@ int   env_contact(const Env* e, int leg);
 float env_joint_angle(const Env* e, int j);
 float env_chest_y(const Env* e);   /* hauteur du torse au-dessus du sol, m */
 float env_x(const Env* e);         /* position x du centre de masse, m */
+float env_vx(const Env* e);        /* vitesse x du centre de masse, m/s */
+
+/* accès lecture seule pour le rendu (view.c) */
+b2WorldId    env_world(const Env* e);
+const RdOld* env_rag(const Env* e);
+
+/* impulsion horizontale sur le torse, pour tester l'équilibre */
+void env_push(Env* e, float dir);

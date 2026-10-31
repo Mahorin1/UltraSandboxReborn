@@ -186,3 +186,14 @@ float env_chest_y(const Env* e) {
 }
 
 float env_x(const Env* e) { return e->com_x; }
+
+float env_vx(const Env* e) { return e->com_vx; }
+
+b2WorldId env_world(const Env* e) { return e->world; }
+
+const RdOld* env_rag(const Env* e) { return e->rd; }
+
+void env_push(Env* e, float dir) {
+    b2Body_ApplyLinearImpulseToCenter(e->rd->body[RD_CHEST],
+                                      (b2Vec2){ dir * 0.12f, 0.0f }, true);
+}
